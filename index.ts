@@ -242,6 +242,7 @@ const boids = [];
 let last_x;
 let last_y;
 
+// generate boids randomly across the entire canvas
 function type_rand(x= 10, y=100) {
   for( let i = 0; i< x; i++ ){
     for( let j = 0; j< y; j++ ){
@@ -262,12 +263,12 @@ function type_rand(x= 10, y=100) {
   }
 }
 
+// generates a boid doughnut around canvas center
 function type1() {
   for( let i = 0; i< 10; i++ ){
     for( let j = 0; j< 100; j++ ){
-      const velocity = vec2.fromValues(0,1);// vec2.random(vec2.create());
+      const velocity = vec2.fromValues(0,1);
       const position = vec2.add( vec2.create(),vec2.scale( vec2.create(),vec2.random( vec2.create() ), Math.random() * 100 + 150), vec2.fromValues( gl.canvas.width / 2, gl.canvas.height / 2 ));
-
       boids.push(new Boid( canvas, position, velocity ));
       last_x = i * 5;
       last_y = j * 5;
@@ -275,21 +276,21 @@ function type1() {
   }
 }
 
+// generates a spiral of boids from canvas center
 function type2(num = 1000) {
   let mag = 10;
   const start = vec2.random(vec2.create());
   for( let i = 0; i< num; i++ ){
-      const velocity = vec2.fromValues(0,1);// vec2.random(vec2.create());
-      
+      const velocity = vec2.fromValues(0,1);
       const position = vec2.scale( vec2.create(), vec2.rotate( vec2.create(), start, vec2.create(), i * Math.E * 2 ), mag );
       mag = mag + 0.05 * Math.E;
-      // const position = vec2.add( vec2.create(),vec2.scale( vec2.create(),vec2.random( vec2.create() ), Math.random() * 100 + 150), vec2.fromValues( gl.canvas.width / 2, gl.canvas.height / 2 ));
       vec2.add( position, position ,vec2.fromValues( gl.canvas.width / 2, gl.canvas.height / 2 ));
       boids.push(new Boid( canvas, position, velocity ));
       last_x = position[0];
       last_y = position[1];
   }
 }
+
 // type_rand(10, 10);
 // type1();
 type2(200);
