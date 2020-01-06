@@ -1,7 +1,7 @@
 // Import stylesheets
 import './style.css';
 import {mat4, vec2, vec4} from 'gl-matrix';
-import {Boid} from './boids';
+import {Boid, BoidManager} from './boids';
 import {QuadTree} from './quadtree';
 
 const {floor} = Math;
@@ -300,6 +300,16 @@ let frametime = 0;
 let last = 0;
 const rates = [];
 
+const _ = () => vec2.create();
+const dimensions = vec4.fromValues( 0, 0, gl.canvas.width, gl.canvas.height );
+
+const boid_manager = new BoidManager(
+  boids,
+  dimensions
+);
+
+const USE_MANAGER = false;
+
 function render( timestamp: number ) {
   // drawScene( gl, programInfo, buffers, timestamp );
   const in_seconds = timestamp * 0.001;
@@ -332,19 +342,26 @@ function render( timestamp: number ) {
 
   GL.clear(GL.COLOR_BUFFER_BIT | GL.DEPTH_BUFFER_BIT);
   
-  let t;
-  const quadtree = new QuadTree(boids, dimensions, i=>i.position, 10 );
-  for ( let boid of boids ) {
-    const tr = quadtree.query_circle([boid.x, boid.y, 35]);
-    if ( ! t ) t = tr;
-    boid.hue = tr.length * boids.length / Math.E;
-    boid.flock( tr, 60 * frametime );
+  
+  let quadtree;
+  if ( USE_MANAGER ) {
+    quadtree = boid_manager.flock_and_render( timestamp, frametime );
+  } else {
+    let t;
+    quadtree = new QuadTree(boids, dimensions, i=>i.position, 10 );
+    for ( let boid of boids ) {
+      const tr = quadtree.query_circle([boid.x, boid.y, 35]);
+      if ( ! t ) t = tr;
+      boid.hue = tr.length * boids.length / Math.E;
+      boid.flock( tr, 60 * frametime );
+    }
+    for ( let boid of boids ) {
+      boid.update(60 * frametime);
+      boid.render();
+    }
   }
-  for ( let boid of boids ) {
-    boid.update(60 * frametime);
-    boid.render();
-  }
-  document.getElementById('display').innerText = `${floor(boids[0].x)},${floor(boids[0].y)}@${t.length} => ${floor(framerate)}@${frametime}`;
+
+  document.getElementById('display').innerText = `${floor(boids[0].x)},${floor(boids[0].y)}@${quadtree.length} => ${floor(framerate)}@${frametime}`;
   other.getContext('2d').drawImage( canvas, 0, 0);
   quadtree.draw( other.getContext('2d') );
   
@@ -353,8 +370,5 @@ function render( timestamp: number ) {
 }
 
 window.requestAnimationFrame(render);
-
-const _ = () => vec2.create();
-const dimensions = vec4.fromValues( 0, 0, gl.canvas.width, gl.canvas.height );
 
 // console.log(  );

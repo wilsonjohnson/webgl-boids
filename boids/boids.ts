@@ -131,7 +131,7 @@ function load_shader( gl: WebGLRenderingContext, type, source: string ): WebGLSh
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
     const info = gl.getShaderInfoLog(shader);
     gl.deleteShader(shader);
-    throw 'An error occurred compiling the shaders: ' + info;
+    throw 'An error occurred compiling the shaders:\n' + info;
   }
 
   return shader;
@@ -352,11 +352,11 @@ export class Boid {
   }
 }
 
-const boid_manager_vert_source = `
+const boid_manager_vert_source = `#version 300 es
 precision mediump float;
 uniform float uTime;
 
-attribute vec2 a_position;
+in vec2 a_position;
 
 uniform vec2 u_resolution;
 uniform vec2 u_translation;
@@ -387,14 +387,19 @@ void main() {
   gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
 }
 `;
-const boid_manager_frag_source = `
+const boid_manager_frag_source = `#version 300 es
 precision mediump float;
 uniform float uTime;
 uniform vec2 u_resolution;
+uniform boid {
+  vec2 position;
+};
 
-float PI = 3.1415926535897;
+#define PI 3.1415926535897
 float HALF_PI = PI * .5;
 float TAU = PI * 2.;
+
+out vec4 fragColor;
 
 void main() {
   vec2 uv = (gl_FragCoord.xy * .5 * u_resolution.xy) / u_resolution.y;
@@ -403,26 +408,104 @@ void main() {
   float b = clamp(HALF_PI *sin( uTime + 2. * TAU / 3.) , .0, 1. );
 
   uv *= 5.;
-
-  gl_FragColor = vec4(
-    r,
-    g,
-    b,
-    1.
-  );
+  vec2 gv = fract( uv );
+  vec3 color = vec3(0);
+  if ( gv.x >.49 && gv.y > .49 ) color.r = 1.;
+  // fragColor = vec4(
+  //   r,
+  //   g,
+  //   b,
+  //   1.
+  // );
+  fragColor = vec4( color, 1.);
 }
 `;
 
+class UniformBuffer {
+  private buffer: WebGLBuffer;
+  constructor(
+    private data: Float32Array,
+    public bound_location = 0
+  ) {
+
+    this.buffer = GL.createBuffer();
+    GL.bindBuffer(GL.UNIFORM_BUFFER, this.buffer);
+    GL.bufferData(GL.UNIFORM_BUFFER, this.data, GL.DYNAMIC_DRAW);
+    GL.bindBuffer(GL.UNIFORM_BUFFER, null);
+    GL.bindBufferBase(GL.UNIFORM_BUFFER, this.bound_location, this.buffer);
+  }
+
+  update(gl, data, offset = 0) {
+    this.data.set(data, offset);
+
+    gl.bindBuffer(gl.UNIFORM_BUFFER, this.buffer);
+    gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.data, 0, null);
+    gl.bindBuffer(gl.UNIFORM_BUFFER, null);
+    gl.bindBufferBase(gl.UNIFORM_BUFFER, this.bound_location, this.buffer);
+  }
+};
+
 export class BoidManager {
+  private static program: WebGLProgram;
+  private static position: WebGLBuffer;
+  private static indices: WebGLBuffer;
+  private static boid_buffer: UniformBuffer;
+  private static indices_length: number;
   private positions_buffer: Float32Array;
+  private a_position: number;
+  private u_timestamp: WebGLUniformLocation;
+  private u_scale: WebGLUniformLocation;
+  private u_translation: WebGLUniformLocation;
+  private u_resolution: WebGLUniformLocation;
+  private u_rotation: WebGLUniformLocation;
+
   constructor(
     private boids: Boid[],
     private dimensions: vec4
   ){
     this.positions_buffer = new Float32Array(this.boids.length * 2);
+    if ( ! BoidManager.program ) BoidManager.program = init_shader_program( GL, boid_manager_vert_source, boid_manager_frag_source );
+    this.a_position = GL.getAttribLocation(BoidManager.program, 'a_position');
+    this.u_timestamp = GL.getUniformLocation(BoidManager.program, 'uTime');
+    this.u_scale = GL.getUniformLocation(BoidManager.program, 'u_scale');
+    this.u_translation = GL.getUniformLocation(BoidManager.program, 'u_translation');
+    this.u_resolution = GL.getUniformLocation(BoidManager.program, 'u_resolution');
+    this.u_rotation = GL.getUniformLocation(BoidManager.program, 'u_rotation');
+
+    if ( ! BoidManager.position ) {
+      const positions = new Float32Array( [
+        0, 0,
+        GL.canvas.height, 0,
+        GL.canvas.height, GL.canvas.width,
+        0, GL.canvas.width,
+      ] );
+
+      BoidManager.position = GL.createBuffer();
+      GL.bindBuffer( GL.ARRAY_BUFFER, BoidManager.position );
+      GL.bufferData( GL.ARRAY_BUFFER, positions, GL.STATIC_DRAW );
+      GL.bindBuffer( GL.ARRAY_BUFFER, null);
+    }
+
+    if ( ! BoidManager.indices ) {
+      const indices = new Uint16Array([
+        0,1,2,
+        2,1,3
+      ]);
+
+      BoidManager.indices = GL.createBuffer();
+      BoidManager.indices_length = indices.length;
+      GL.bindBuffer( GL.ELEMENT_ARRAY_BUFFER, BoidManager.indices );
+      GL.bufferData( GL.ELEMENT_ARRAY_BUFFER, indices, GL.STATIC_DRAW );
+      GL.bindBuffer( GL.ELEMENT_ARRAY_BUFFER, null);
+    }
+    if ( ! BoidManager.boid_buffer ) {
+      BoidManager.boid_buffer = new UniformBuffer(vec4.create(), 0);
+      const program = BoidManager.program;
+      GL.uniformBlockBinding( program, GL.getUniformBlockIndex( program, "boid" ), BoidManager.boid_buffer.bound_location);
+    }
   }
 
-  public update_and_render( frametime: number ): QuadTree<Boid> {
+  public flock_and_render( timestamp: number, frametime: number ): QuadTree<Boid> {
     let t;
     const quadtree = new QuadTree(this.boids, this.dimensions, i=>i.position, 10 );
     for ( let boid of this.boids ) {
@@ -431,16 +514,67 @@ export class BoidManager {
       boid.hue = tr.length * this.boids.length / Math.E;
       boid.flock( tr, 60 * frametime );
     }
+    this.pre_render( timestamp, frametime );
     this.boids.forEach( (boid, i)=>{
       boid.update(60 * frametime);
       this.positions_buffer[i*2] = boid.position[0];
       this.positions_buffer[i*2+1] = boid.position[1];
+
     });
-    this.render( frametime );
+    this.render( timestamp, frametime );
     return quadtree;
   }
 
-  private render( frametime: number ): void {
+  private pre_render( timestamp:number, frametime: number ): void {
+    GL.useProgram(BoidManager.program);
+    // Bind vertex buffer object
+    GL.bindBuffer(GL.ARRAY_BUFFER, BoidManager.position);
 
+    // Bind index buffer object
+    GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, BoidManager.indices); 
+
+
+    // Tell WebGL how to pull out the positions from the position
+    // buffer into the vertexPosition attribute.
+    {
+      const num_components = 3;  // pull out 3 values per iteration
+      const type = GL.FLOAT;    // the data in the buffer is 32bit floats
+      const normalize = false;  // don't normalize
+      const stride = 0;         // how many bytes to get from one set of values to the next
+                                // 0 = use type and numComponents above
+      const offset = 0;         // how many bytes inside the buffer to start from
+      GL.vertexAttribPointer(
+          this.a_position,
+          num_components,
+          type,
+          normalize,
+          stride,
+          offset);
+      GL.enableVertexAttribArray(this.a_position);
+    }
+
+    // Set the shader uniforms
+    GL.uniform2f(this.u_scale,1,1);
+    GL.uniform2f(this.u_translation, 0, 0);
+    GL.uniform2f(this.u_resolution, GL.canvas.width, GL.canvas.height);
+
+    // const rotation = vec2.normalize( vec2.create(), this.velocity );
+
+    GL.uniform2f(this.u_rotation, 0,0);
+
+    const uTime = ( timestamp ) / 1000;
+    GL.uniform1f(
+      this.u_timestamp,
+      uTime
+    );
+    
+  }
+
+  private render( timestamp:number, frametime: number ): void {
+    {
+      const offset = 0;
+      const vertexCount = 3;
+      GL.drawElements(GL.TRIANGLES, BoidManager.indices_length, GL.UNSIGNED_SHORT, 0);
+    }
   }
 }
