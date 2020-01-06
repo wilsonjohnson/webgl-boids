@@ -1,4 +1,5 @@
-import {mat4, vec2} from 'gl-matrix';
+import {mat4, vec2, vec4} from 'gl-matrix';
+import {QuadTree} from '../quadtree';
 
 
 let GL: WebGL2RenderingContext;
@@ -348,5 +349,98 @@ export class Boid {
       const vertexCount = 3;
       GL.drawArrays(GL.TRIANGLE_STRIP, offset, vertexCount);
     }
+  }
+}
+
+const boid_manager_vert_source = `
+precision mediump float;
+uniform float uTime;
+
+attribute vec2 a_position;
+
+uniform vec2 u_resolution;
+uniform vec2 u_translation;
+uniform vec2 u_rotation;
+uniform vec2 u_scale;
+
+void main() {
+  // Scale the position
+  vec2 scaledPosition = a_position * u_scale;
+
+  // Rotate the position
+  vec2 rotatedPosition = vec2(
+     scaledPosition.x * u_rotation.y + scaledPosition.y * u_rotation.x,
+     scaledPosition.y * u_rotation.y - scaledPosition.x * u_rotation.x);
+
+  // Add in the translation.
+  vec2 position = rotatedPosition + u_translation;
+
+  // convert the position from pixels to 0.0 to 1.0
+  vec2 zeroToOne = position / u_resolution;
+
+  // convert from 0->1 to 0->2
+  vec2 zeroToTwo = zeroToOne * 2.0;
+
+  // convert from 0->2 to -1->+1 (clipspace)
+  vec2 clipSpace = zeroToTwo - 1.0;
+
+  gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+}
+`;
+const boid_manager_frag_source = `
+precision mediump float;
+uniform float uTime;
+uniform vec2 u_resolution;
+
+float PI = 3.1415926535897;
+float HALF_PI = PI * .5;
+float TAU = PI * 2.;
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy * .5 * u_resolution.xy) / u_resolution.y;
+  float r = clamp(HALF_PI *sin( uTime ) , .0, 1. );
+  float g = clamp(HALF_PI *sin( uTime + TAU / 3.) , .0, 1. );
+  float b = clamp(HALF_PI *sin( uTime + 2. * TAU / 3.) , .0, 1. );
+
+  uv *= 5.;
+
+  gl_FragColor = vec4(
+    r,
+    g,
+    b,
+    1.
+  );
+}
+`;
+
+export class BoidManager {
+  private positions_buffer: Float32Array;
+  constructor(
+    private boids: Boid[],
+    private dimensions: vec4
+  ){
+    this.positions_buffer = new Float32Array(this.boids.length * 2);
+  }
+
+  public update_and_render( frametime: number ): QuadTree<Boid> {
+    let t;
+    const quadtree = new QuadTree(this.boids, this.dimensions, i=>i.position, 10 );
+    for ( let boid of this.boids ) {
+      const tr = quadtree.query_circle([boid.x, boid.y, 35]);
+      if ( ! t ) t = tr;
+      boid.hue = tr.length * this.boids.length / Math.E;
+      boid.flock( tr, 60 * frametime );
+    }
+    this.boids.forEach( (boid, i)=>{
+      boid.update(60 * frametime);
+      this.positions_buffer[i*2] = boid.position[0];
+      this.positions_buffer[i*2+1] = boid.position[1];
+    });
+    this.render( frametime );
+    return quadtree;
+  }
+
+  private render( frametime: number ): void {
+
   }
 }
