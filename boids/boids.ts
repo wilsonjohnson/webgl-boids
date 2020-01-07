@@ -363,38 +363,61 @@ uniform vec2 u_translation;
 uniform vec2 u_rotation;
 uniform vec2 u_scale;
 
+out vec2 v_Position;
+
+vec4 vecOut( vec2 from ) {
+  return vec4( from, 0, 1 );
+}
+
 void main() {
+  // gl_Position = vecOut(a_position);
   // Scale the position
   vec2 scaledPosition = a_position * u_scale;
+  // gl_Position = vecOut( a_position * u_scale );
 
   // Rotate the position
   vec2 rotatedPosition = vec2(
      scaledPosition.x * u_rotation.y + scaledPosition.y * u_rotation.x,
      scaledPosition.y * u_rotation.y - scaledPosition.x * u_rotation.x);
+  // gl_Position = vecOut(vec2(
+  //    scaledPosition.x * u_rotation.y + scaledPosition.y * u_rotation.x,
+  //    scaledPosition.y * u_rotation.y - scaledPosition.x * u_rotation.x));
 
   // Add in the translation.
   vec2 position = rotatedPosition + u_translation;
+  // gl_Position = vecOut( rotatedPosition + u_translation );
 
   // convert the position from pixels to 0.0 to 1.0
   vec2 zeroToOne = position / u_resolution;
+  // gl_Position = vecOut( position / u_resolution );
 
   // convert from 0->1 to 0->2
   vec2 zeroToTwo = zeroToOne * 2.0;
+  // gl_Position = vecOut( zeroToOne * 2.0 );
 
   // convert from 0->2 to -1->+1 (clipspace)
   vec2 clipSpace = zeroToTwo - 1.0;
+  gl_Position = vecOut( zeroToTwo - 1.0 );
 
-  gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+  // gl_Position = vecOut(clipSpace * vec2(1, -1));
 }
 `;
-const boid_manager_frag_source = `#version 300 es
+const get_boid_manager_frag_source = (boid_length = 1) => `#version 300 es
 precision mediump float;
-uniform float uTime;
-uniform vec2 u_resolution;
-uniform boid {
+
+struct Boid {
   vec2 position;
+  vec2 velocity;
 };
 
+layout (std140) uniform u_boids {
+  Boid boids[${boid_length}];
+};
+
+uniform float uTime;
+uniform vec2 u_resolution;
+
+#define POSITIONS_LENGTH ${boid_length}
 #define PI 3.1415926535897
 float HALF_PI = PI * .5;
 float TAU = PI * 2.;
@@ -409,15 +432,26 @@ void main() {
 
   uv *= 5.;
   vec2 gv = fract( uv );
-  vec3 color = vec3(0);
-  if ( gv.x >.49 && gv.y > .49 ) color.r = 1.;
-  // fragColor = vec4(
-  //   r,
-  //   g,
-  //   b,
-  //   1.
-  // );
-  fragColor = vec4( color, 1.);
+  vec3 color = vec3(0.1);
+  // if ( gv.x >.49 && gv.y > .49 ) color.r = 1.;
+  // if ( position.x == uv.x ) color.r = 1.;
+  for ( int i = 0; i < POSITIONS_LENGTH; i++ ) {
+    Boid boid = boids[i];
+    vec2 position = boid.position;
+    if ( distance( position, vec2(0)) == 0. ) continue;
+    vec2 top_left = position - 1.;
+    vec2 bottom_right = position + 1.;
+    vec2 offset = position + boid.velocity;
+    // if ( abs(offset.x) < 1. && abs(offset.y) < 1. ) {
+    //   // color.rg = position.xy;
+    //   color += vec3( r,g,b );
+    // }
+    if ( distance( gl_FragCoord.xy, offset ) < 2. ) color -= vec3( 1. );
+    if ( distance( gl_FragCoord.xy, position ) < 4. ) color += vec3( 1. );
+  }
+  
+  // if ( distance( gl_FragCoord.xy, vec2(0) ) < 1. ) color = vec3(1.);
+  fragColor = vec4( color, 1. );
 }
 `;
 
@@ -444,7 +478,7 @@ class UniformBuffer {
     gl.bindBufferBase(gl.UNIFORM_BUFFER, this.bound_location, this.buffer);
   }
 };
-
+let do_log = true;
 export class BoidManager {
   private static program: WebGLProgram;
   private static position: WebGLBuffer;
@@ -463,8 +497,8 @@ export class BoidManager {
     private boids: Boid[],
     private dimensions: vec4
   ){
-    this.positions_buffer = new Float32Array(this.boids.length * 2);
-    if ( ! BoidManager.program ) BoidManager.program = init_shader_program( GL, boid_manager_vert_source, boid_manager_frag_source );
+    this.positions_buffer = new Float32Array(boids.length * 8);
+    if ( ! BoidManager.program ) BoidManager.program = init_shader_program( GL, boid_manager_vert_source, get_boid_manager_frag_source( boids.length ) );
     this.a_position = GL.getAttribLocation(BoidManager.program, 'a_position');
     this.u_timestamp = GL.getUniformLocation(BoidManager.program, 'uTime');
     this.u_scale = GL.getUniformLocation(BoidManager.program, 'u_scale');
@@ -489,7 +523,7 @@ export class BoidManager {
     if ( ! BoidManager.indices ) {
       const indices = new Uint16Array([
         0,1,2,
-        2,1,3
+        0,2,3
       ]);
 
       BoidManager.indices = GL.createBuffer();
@@ -499,9 +533,9 @@ export class BoidManager {
       GL.bindBuffer( GL.ELEMENT_ARRAY_BUFFER, null);
     }
     if ( ! BoidManager.boid_buffer ) {
-      BoidManager.boid_buffer = new UniformBuffer(vec4.create(), 0);
+      BoidManager.boid_buffer = new UniformBuffer(this.positions_buffer, 0);
       const program = BoidManager.program;
-      GL.uniformBlockBinding( program, GL.getUniformBlockIndex( program, "boid" ), BoidManager.boid_buffer.bound_location);
+      GL.uniformBlockBinding( program, GL.getUniformBlockIndex( program, "u_boids" ), BoidManager.boid_buffer.bound_location);
     }
   }
 
@@ -517,11 +551,15 @@ export class BoidManager {
     this.pre_render( timestamp, frametime );
     this.boids.forEach( (boid, i)=>{
       boid.update(60 * frametime);
-      this.positions_buffer[i*2] = boid.position[0];
-      this.positions_buffer[i*2+1] = boid.position[1];
-
+      this.positions_buffer.set( boid.position, i * 4);
+      this.positions_buffer.set( boid.velocity, i * 4 + 2);
     });
+    BoidManager.boid_buffer.update(GL, this.positions_buffer);
+    // if ( Math.floor(frametime % 3000) === 0 ) {
+    //   console.log( this.positions_buffer);
+    // }
     this.render( timestamp, frametime );
+   
     return quadtree;
   }
 
@@ -531,13 +569,12 @@ export class BoidManager {
     GL.bindBuffer(GL.ARRAY_BUFFER, BoidManager.position);
 
     // Bind index buffer object
-    GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, BoidManager.indices); 
-
+    GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, BoidManager.indices);
 
     // Tell WebGL how to pull out the positions from the position
     // buffer into the vertexPosition attribute.
     {
-      const num_components = 3;  // pull out 3 values per iteration
+      const num_components = 2;  // pull out 3 values per iteration
       const type = GL.FLOAT;    // the data in the buffer is 32bit floats
       const normalize = false;  // don't normalize
       const stride = 0;         // how many bytes to get from one set of values to the next
@@ -555,12 +592,12 @@ export class BoidManager {
 
     // Set the shader uniforms
     GL.uniform2f(this.u_scale,1,1);
-    GL.uniform2f(this.u_translation, 0, 0);
+    GL.uniform2f(this.u_translation,0,0);
     GL.uniform2f(this.u_resolution, GL.canvas.width, GL.canvas.height);
 
     // const rotation = vec2.normalize( vec2.create(), this.velocity );
 
-    GL.uniform2f(this.u_rotation, 0,0);
+    GL.uniform2f(this.u_rotation, 0,1);
 
     const uTime = ( timestamp ) / 1000;
     GL.uniform1f(

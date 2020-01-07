@@ -293,7 +293,7 @@ function type2(num = 1000) {
 
 // type_rand(10, 10);
 // type1();
-type2(200);
+type2(100);
 
 
 let frametime = 0;
@@ -308,7 +308,7 @@ const boid_manager = new BoidManager(
   dimensions
 );
 
-const USE_MANAGER = false;
+const USE_MANAGER = true;
 
 function render( timestamp: number ) {
   // drawScene( gl, programInfo, buffers, timestamp );
