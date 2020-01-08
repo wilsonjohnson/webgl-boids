@@ -402,7 +402,10 @@ void main() {
   // gl_Position = vecOut(clipSpace * vec2(1, -1));
 }
 `;
-const get_boid_manager_frag_source = (boid_length = 1) => `#version 300 es
+const boid_manager_frag_source = `#version 300 es
+#define MAX_POSITIONS_LENGTH 1000
+#define PI 3.1415926535897
+
 precision mediump float;
 
 struct Boid {
@@ -410,19 +413,25 @@ struct Boid {
   vec2 velocity;
 };
 
-layout (std140) uniform u_boids {
-  Boid boids[${boid_length}];
+layout( std140 ) uniform u_boids {
+  Boid boids[MAX_POSITIONS_LENGTH];
 };
 
 uniform float uTime;
 uniform vec2 u_resolution;
 
-#define POSITIONS_LENGTH ${boid_length}
-#define PI 3.1415926535897
 float HALF_PI = PI * .5;
 float TAU = PI * 2.;
 
 out vec4 fragColor;
+
+vec4 PaintBoid( vec2 uv, Boid b ) {
+  vec2 offset = b.position + b.velocity;
+  vec4 color = vec4(0,0,0,1);
+  if ( distance( uv, b.velocity ) < 3. ) color -= vec4( 1,1,1,0 );
+  if ( distance( uv, b.position ) < 5. ) color += vec4( 1 );
+  return color;
+}
 
 void main() {
   vec2 uv = (gl_FragCoord.xy * .5 * u_resolution.xy) / u_resolution.y;
@@ -430,28 +439,21 @@ void main() {
   float g = clamp(HALF_PI *sin( uTime + TAU / 3.) , .0, 1. );
   float b = clamp(HALF_PI *sin( uTime + 2. * TAU / 3.) , .0, 1. );
 
-  uv *= 5.;
+  uv *= 2.;
   vec2 gv = fract( uv );
-  vec3 color = vec3(0.1);
-  // if ( gv.x >.49 && gv.y > .49 ) color.r = 1.;
-  // if ( position.x == uv.x ) color.r = 1.;
-  for ( int i = 0; i < POSITIONS_LENGTH; i++ ) {
-    Boid boid = boids[i];
-    vec2 position = boid.position;
-    if ( distance( position, vec2(0)) == 0. ) continue;
-    vec2 top_left = position - 1.;
-    vec2 bottom_right = position + 1.;
-    vec2 offset = position + boid.velocity;
-    // if ( abs(offset.x) < 1. && abs(offset.y) < 1. ) {
-    //   // color.rg = position.xy;
-    //   color += vec3( r,g,b );
-    // }
-    if ( distance( gl_FragCoord.xy, offset ) < 2. ) color -= vec3( 1. );
-    if ( distance( gl_FragCoord.xy, position ) < 4. ) color += vec3( 1. );
+  vec4 color = vec4(0.1);
+  color = vec4( smoothstep(vec2(0),u_resolution, uv), 0, 1);
+  for ( int i = 0; i < MAX_POSITIONS_LENGTH; i++ ) {
+    vec2 position = boids[i].position;
+    vec2 not = vec2(-1);
+    if ( position.x == not.x && position.y == not.y ) break;
+    // if ( distance( boids[i].position, vec2(0) ) == 0. ) continue;
+    vec4 boid = PaintBoid( uv, boids[i] );
+    color += boid;
   }
   
   // if ( distance( gl_FragCoord.xy, vec2(0) ) < 1. ) color = vec3(1.);
-  fragColor = vec4( color, 1. );
+  fragColor = color;
 }
 `;
 
@@ -470,7 +472,7 @@ class UniformBuffer {
   }
 
   update(gl, data, offset = 0) {
-    this.data.set(data, offset);
+    if ( data !== this.data ) this.data.set(data, offset);
 
     gl.bindBuffer(gl.UNIFORM_BUFFER, this.buffer);
     gl.bufferSubData(gl.UNIFORM_BUFFER, 0, this.data, 0, null);
@@ -497,15 +499,21 @@ export class BoidManager {
     private boids: Boid[],
     private dimensions: vec4
   ){
-    this.positions_buffer = new Float32Array(boids.length * 8);
-    if ( ! BoidManager.program ) BoidManager.program = init_shader_program( GL, boid_manager_vert_source, get_boid_manager_frag_source( boids.length ) );
+    const arr = new Array( 1000 * 4 );
+    arr.fill(-1);
+    this.positions_buffer = new Float32Array(arr);
+    window.pos_buff = this.positions_buffer;
+    BoidManager.init( this.positions_buffer );
     this.a_position = GL.getAttribLocation(BoidManager.program, 'a_position');
     this.u_timestamp = GL.getUniformLocation(BoidManager.program, 'uTime');
     this.u_scale = GL.getUniformLocation(BoidManager.program, 'u_scale');
     this.u_translation = GL.getUniformLocation(BoidManager.program, 'u_translation');
     this.u_resolution = GL.getUniformLocation(BoidManager.program, 'u_resolution');
     this.u_rotation = GL.getUniformLocation(BoidManager.program, 'u_rotation');
+  }
 
+  public static init(positions_buffer : Float32Array): void {
+    if ( ! BoidManager.program ) BoidManager.program = init_shader_program( GL, boid_manager_vert_source, boid_manager_frag_source );
     if ( ! BoidManager.position ) {
       const positions = new Float32Array( [
         0, 0,
@@ -519,7 +527,6 @@ export class BoidManager {
       GL.bufferData( GL.ARRAY_BUFFER, positions, GL.STATIC_DRAW );
       GL.bindBuffer( GL.ARRAY_BUFFER, null);
     }
-
     if ( ! BoidManager.indices ) {
       const indices = new Uint16Array([
         0,1,2,
@@ -533,7 +540,7 @@ export class BoidManager {
       GL.bindBuffer( GL.ELEMENT_ARRAY_BUFFER, null);
     }
     if ( ! BoidManager.boid_buffer ) {
-      BoidManager.boid_buffer = new UniformBuffer(this.positions_buffer, 0);
+      BoidManager.boid_buffer = new UniformBuffer( positions_buffer, 0);
       const program = BoidManager.program;
       GL.uniformBlockBinding( program, GL.getUniformBlockIndex( program, "u_boids" ), BoidManager.boid_buffer.bound_location);
     }
@@ -551,8 +558,8 @@ export class BoidManager {
     this.pre_render( timestamp, frametime );
     this.boids.forEach( (boid, i)=>{
       boid.update(60 * frametime);
-      this.positions_buffer.set( boid.position, i * 4);
-      this.positions_buffer.set( boid.velocity, i * 4 + 2);
+      this.positions_buffer.set( boid.position, i * 4 );
+      this.positions_buffer.set( boid.velocity, i * 4 + 2 );
     });
     BoidManager.boid_buffer.update(GL, this.positions_buffer);
     // if ( Math.floor(frametime % 3000) === 0 ) {
