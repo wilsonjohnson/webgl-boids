@@ -193,6 +193,15 @@ function drawScene(gl: WebGLRenderingContext, program_info, buffers, timestamp: 
 const appDiv: HTMLElement = document.getElementById('app');
 appDiv.innerHTML = `
 <div id="display"></div>
+<form name="displayForm" style="
+position:absolute;
+top: 0px;
+left: 500px;
+">
+  <input type="radio" name="display" value="shader" checked>Shader<br>
+  <input type="radio" name="display" value="webgl">WebGL<br>
+</form>
+
 <canvas id="canvas"
         style="margin: 0;
         padding: 0;

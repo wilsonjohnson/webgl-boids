@@ -425,11 +425,25 @@ float TAU = PI * 2.;
 
 out vec4 fragColor;
 
+float LineTest( vec2 v1, vec2 v2, vec2 p ) {
+  return (p.x - v1.x) * (v2.y - v1.y) - (p.y - v1.y) * (v2.x-v1.x);
+}
+
 vec4 PaintBoid( vec2 uv, Boid b ) {
   vec2 offset = b.position + b.velocity;
   vec4 color = vec4(0,0,0,1);
-  if ( distance( uv, b.velocity ) < 3. ) color -= vec4( 1,1,1,0 );
-  if ( distance( uv, b.position ) < 5. ) color += vec4( 1 );
+  vec2 vel = normalize(b.velocity) * 4.;
+  vec2 left = vel.yx * vec2(1.,-1.);
+  vec2 right = vel.yx * vec2(-1.,1.);
+  left = left - vel + b.position;
+  right = right - vel + b.position;
+  vec2 point = vel * 2. + b.position;
+  if ( LineTest(left, right, uv) >= 0. &&
+    LineTest(left, point, uv) <= 0. &&
+    LineTest(right, point, uv) >= 0.
+  ) color += vec4( 0,0,1,1 );
+  // if ( distance( uv, b.velocity + b.position ) < 3. ) color += vec4( 0,1,0,0 );
+  // if ( distance( uv, b.position ) < 5. ) 
   return color;
 }
 
@@ -442,12 +456,11 @@ void main() {
   uv *= 2.;
   vec2 gv = fract( uv );
   vec4 color = vec4(0.1);
-  color = vec4( smoothstep(vec2(0),u_resolution, uv), 0, 1);
+  // color = vec4( smoothstep(vec2(0),u_resolution, uv), 0, 1);
   for ( int i = 0; i < MAX_POSITIONS_LENGTH; i++ ) {
     vec2 position = boids[i].position;
     vec2 not = vec2(-1);
     if ( position.x == not.x && position.y == not.y ) break;
-    // if ( distance( boids[i].position, vec2(0) ) == 0. ) continue;
     vec4 boid = PaintBoid( uv, boids[i] );
     color += boid;
   }
