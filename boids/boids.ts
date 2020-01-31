@@ -441,7 +441,7 @@ vec4 PaintBoid( vec2 uv, Boid b ) {
   if ( LineTest(left, right, uv) >= 0. &&
     LineTest(left, point, uv) <= 0. &&
     LineTest(right, point, uv) >= 0.
-  ) color += vec4( 0,0,1,1 );
+  ) color += vec4( smoothstep(vec2(0),u_resolution,uv), 0, 1);
   // if ( distance( uv, b.velocity + b.position ) < 3. ) color += vec4( 0,1,0,0 );
   // if ( distance( uv, b.position ) < 5. ) 
   return color;
@@ -454,6 +454,7 @@ void main() {
   float b = clamp(HALF_PI *sin( uTime + 2. * TAU / 3.) , .0, 1. );
 
   uv *= 2.;
+  uv.x = u_resolution.x-uv.x;
   vec2 gv = fract( uv );
   vec4 color = vec4(0.1);
   // color = vec4( smoothstep(vec2(0),u_resolution, uv), 0, 1);
@@ -515,7 +516,6 @@ export class BoidManager {
     const arr = new Array( 1000 * 4 );
     arr.fill(-1);
     this.positions_buffer = new Float32Array(arr);
-    window.pos_buff = this.positions_buffer;
     BoidManager.init( this.positions_buffer );
     this.a_position = GL.getAttribLocation(BoidManager.program, 'a_position');
     this.u_timestamp = GL.getUniformLocation(BoidManager.program, 'uTime');

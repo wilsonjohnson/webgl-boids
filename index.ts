@@ -198,8 +198,8 @@ position:absolute;
 top: 0px;
 left: 500px;
 ">
-  <input type="radio" name="display" value="shader" checked>Shader<br>
-  <input type="radio" name="display" value="webgl">WebGL<br>
+  <input id="run_shader" type="radio" name="display" value="shader" checked>Shader<br>
+  <input id="run_webgl" type="radio" name="display" value="webgl">WebGL<br>
 </form>
 
 <canvas id="canvas"
@@ -222,6 +222,8 @@ left: 500px;
 
 const canvas: HTMLCanvasElement = document.getElementById('canvas') as HTMLCanvasElement;
 const other: HTMLCanvasElement = document.getElementById('other') as HTMLCanvasElement;
+const run_shader: HTMLInputElement = document.getElementById('run_shader') as HTMLInputElement;
+const run_webgl: HTMLInputElement = document.getElementById('run_webgl') as HTMLInputElement;
 canvas.width = 500;
 canvas.height = 500;
 other.width = 500;
@@ -353,7 +355,7 @@ function render( timestamp: number ) {
   
   
   let quadtree;
-  if ( USE_MANAGER ) {
+  if ( run_shader.checked ) {
     quadtree = boid_manager.flock_and_render( timestamp, frametime );
   } else {
     let t;
