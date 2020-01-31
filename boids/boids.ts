@@ -432,7 +432,7 @@ float LineTest( vec2 v1, vec2 v2, vec2 p ) {
 vec4 PaintBoid( vec2 uv, Boid b ) {
   vec2 offset = b.position + b.velocity;
   vec4 color = vec4(0,0,0,1);
-  vec2 vel = normalize(b.velocity) * 4.;
+  vec2 vel = normalize(b.velocity) * 3.;
   vec2 left = vel.yx * vec2(1.,-1.);
   vec2 right = vel.yx * vec2(-1.,1.);
   left = left - vel + b.position;
@@ -454,7 +454,7 @@ void main() {
   float b = clamp(HALF_PI *sin( uTime + 2. * TAU / 3.) , .0, 1. );
 
   uv *= 2.;
-  uv.x = u_resolution.x-uv.x;
+  uv.y = u_resolution.y-uv.y;
   vec2 gv = fract( uv );
   vec4 color = vec4(0.1);
   // color = vec4( smoothstep(vec2(0),u_resolution, uv), 0, 1);
