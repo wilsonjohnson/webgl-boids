@@ -198,8 +198,8 @@ position:absolute;
 top: 0px;
 left: 500px;
 ">
-  <input id="run_shader" type="radio" name="display" value="shader" checked>Shader<br>
-  <input id="run_webgl" type="radio" name="display" value="webgl">WebGL<br>
+  <input id="run_shader" type="radio" name="display" value="shader" checked>GL Shader<br>
+  <input id="run_webgl" type="radio" name="display" value="webgl">GL Triangle<br>
 </form>
 
 <canvas id="canvas"
