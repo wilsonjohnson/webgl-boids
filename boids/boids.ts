@@ -441,7 +441,8 @@ vec4 PaintBoid( vec2 uv, Boid b ) {
   if ( LineTest(left, right, uv) >= 0. &&
     LineTest(left, point, uv) <= 0. &&
     LineTest(right, point, uv) >= 0.
-  ) color += vec4( smoothstep(vec2(0),u_resolution,uv), 0, 1);
+  ) // color += vec4( smoothstep(vec2(0),u_resolution,uv), 0, 1);
+  color += vec4( smoothstep(vec2(0),u_resolution,uv) * normalize( vel ), 1, 1);
   // if ( distance( uv, b.velocity + b.position ) < 3. ) color += vec4( 0,1,0,0 );
   // if ( distance( uv, b.position ) < 5. ) 
   return color;
