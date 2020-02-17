@@ -14,26 +14,59 @@ uniform vec2 u_translation;
 uniform vec2 u_rotation;
 uniform vec2 u_scale;
 
-void main() {
+uniform vec2 u_camera_position;
+uniform vec2 u_camera_scale;
+uniform vec2 u_camera_rotation;
+
+vec2 apply_camera( vec2 position, vec2 scale, vec2 rotation, vec2 translation ) {
   // Scale the position
-  vec2 scaledPosition = a_position * u_scale;
+  vec2 scaledPosition = position * scale;
 
   // Rotate the position
   vec2 rotatedPosition = vec2(
-     scaledPosition.x * u_rotation.y + scaledPosition.y * u_rotation.x,
-     scaledPosition.y * u_rotation.y - scaledPosition.x * u_rotation.x);
+     scaledPosition.x * rotation.y + scaledPosition.y * rotation.x,
+     scaledPosition.y * rotation.y - scaledPosition.x * rotation.x);
 
   // Add in the translation.
-  vec2 position = rotatedPosition + u_translation;
+  return rotatedPosition + translation;
+}
 
+vec2 apply_camera_to_clipspace( vec2 clipspace, vec2 resolution, vec2 scale, vec2 rotation, vec2 translation ) {
+  vec2 position = clipspace * resolution;
+  position = apply_camera( position, scale, rotation, translation );
+  return position / resolution;
+}
+
+vec2 create_view( vec2 position, vec2 scale, vec2 rotation, vec2 translation ) {
+  // Scale the position
+  vec2 scaledPosition = position * scale;
+
+  // Rotate the position
+  vec2 rotatedPosition = vec2(
+     scaledPosition.x * rotation.y + scaledPosition.y * rotation.x,
+     scaledPosition.y * rotation.y - scaledPosition.x * rotation.x);
+
+  // Add in the translation.
+  return rotatedPosition + translation;
+}
+
+vec2 clip( vec2 position, vec2 resolution ) {
   // convert the position from pixels to 0.0 to 1.0
-  vec2 zeroToOne = position / u_resolution;
+  vec2 zeroToOne = position / resolution;
 
   // convert from 0->1 to 0->2
   vec2 zeroToTwo = zeroToOne * 2.0;
 
   // convert from 0->2 to -1->+1 (clipspace)
-  vec2 clipSpace = zeroToTwo - 1.0;
+  return zeroToTwo - 1.0;
+}
+
+void main() {
+  vec2 position = create_view(a_position, u_scale, u_rotation, u_translation);
+
+  vec2 clipSpace = clip( position, u_resolution );
+
+  clipSpace = apply_camera_to_clipspace(clipSpace, u_resolution, u_camera_scale, u_camera_rotation, u_camera_position);
 
   gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
 }
@@ -147,6 +180,49 @@ function get_constraints(): vec2 {
   return vec2.fromValues( GL.canvas.width, GL.canvas.height );
 }
 
+export class Camera2D {
+  private u_camera_position: WebGLUniformLocation;
+  private u_camera_scale: WebGLUniformLocation;
+  private u_camera_rotation: WebGLUniformLocation;
+
+  private position: vec2 = vec2.create();
+  private scale: vec2 = vec2.fromValues(1,1);
+  private rotation: vec2 = vec2.create();
+
+  constructor(
+    private program: WebGLProgram
+  ) {
+    this.u_camera_position = GL.getUniformLocation(this.program, 'u_camera_position');
+    this.u_camera_scale = GL.getUniformLocation(this.program, 'u_camera_scale');
+    this.u_camera_rotation = GL.getUniformLocation(this.program, 'u_camera_rotation');
+    this.angle = Math.PI;
+  }
+
+  public update() {
+    GL.uniform2fv(this.u_camera_position, this.position);
+    GL.uniform2fv(this.u_camera_scale, this.scale);
+    vec2.normalize( this.rotation, this.rotation );
+    GL.uniform2fv(this.u_camera_rotation, this.rotation);
+  }
+
+  public set translation( value: vec2 ) {
+    this.position = value;
+  }
+
+  public get translation() {
+    return this.position;
+  }
+
+  public set angle( value: number ) {
+    this.rotation = vec2.rotate(
+      vec2.create(),
+      vec2.fromValues(1,0),
+      vec2.create(),
+      value
+    );
+  }
+}
+
 export class Boid {
   private static program: WebGLProgram;
   private a_position: number;
@@ -155,6 +231,7 @@ export class Boid {
   private u_translation: WebGLUniformLocation;
   private u_resolution: WebGLUniformLocation;
   private u_rotation: WebGLUniformLocation;
+  public static camera: Camera2D;
   private static position: WebGLBuffer;
   private acceleration: vec2;
   private _hue: number;
@@ -175,6 +252,7 @@ export class Boid {
     this.u_translation = GL.getUniformLocation(Boid.program, 'u_translation');
     this.u_resolution = GL.getUniformLocation(Boid.program, 'u_resolution');
     this.u_rotation = GL.getUniformLocation(Boid.program, 'u_rotation');
+    if (!Boid.camera) Boid.camera = new Camera2D( Boid.program );
     this.acceleration = vec2.fromValues( 0, 0 );
     this.personal_bubble = 25;
     this.max_acceleration = 5;
@@ -334,6 +412,8 @@ export class Boid {
     GL.uniform2fv(this.u_translation, this.position);
     GL.uniform2f(this.u_resolution, GL.canvas.width, GL.canvas.height);
 
+    Boid.camera.update();
+
     const rotation = vec2.normalize( vec2.create(), this.velocity );
 
     GL.uniform2fv(this.u_rotation, vec2.rotate(rotation, rotation, vec2.fromValues(0,0), Math.PI/2));
@@ -362,6 +442,10 @@ uniform vec2 u_resolution;
 uniform vec2 u_translation;
 uniform vec2 u_rotation;
 uniform vec2 u_scale;
+
+uniform vec2 u_camera_position;
+uniform vec2 u_camera_scale;
+uniform vec2 u_camera_rotation;
 
 out vec2 v_Position;
 

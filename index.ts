@@ -198,8 +198,11 @@ position:absolute;
 top: 0px;
 left: 500px;
 ">
-  <input id="run_shader" type="radio" name="display" value="shader" checked>GL Shader<br>
-  <input id="run_webgl" type="radio" name="display" value="webgl">GL Triangle<br>
+  <input id="run_shader" type="radio" name="display" value="shader" >GL Shader<br>
+  <input id="run_webgl" type="radio" name="display" value="webgl" checked>GL Triangle<br>
+  <input id="slider_x" type="range" min="-500" max="500" value="0">Camera X<br>
+  <input id="slider_y" type="range" min="-500" max="500" value="0">Camera Y<br>
+  <input id="slider_angle" type="range" min="0" max="360" value="0">Camera Rotation<br>
 </form>
 
 <canvas id="canvas"
@@ -224,6 +227,9 @@ const canvas: HTMLCanvasElement = document.getElementById('canvas') as HTMLCanva
 const other: HTMLCanvasElement = document.getElementById('other') as HTMLCanvasElement;
 const run_shader: HTMLInputElement = document.getElementById('run_shader') as HTMLInputElement;
 const run_webgl: HTMLInputElement = document.getElementById('run_webgl') as HTMLInputElement;
+const x_slider: HTMLInputElement = document.getElementById('slider_x') as HTMLInputElement;
+const y_slider: HTMLInputElement = document.getElementById('slider_y') as HTMLInputElement;
+const angle_slider: HTMLInputElement = document.getElementById('slider_angle') as HTMLInputElement;
 canvas.width = 500;
 canvas.height = 500;
 other.width = 500;
@@ -306,6 +312,17 @@ function type2(num = 1000) {
 // type1();
 type2(100);
 
+x_slider.oninput = x => {
+  Boid.camera.translation[0] = x.target.value;
+}
+
+y_slider.oninput = y => {
+  Boid.camera.translation[1] = y.target.value;
+}
+
+angle_slider.oninput = y => {
+  Boid.camera.angle = y.target.value / 180 * Math.PI;
+}
 
 let frametime = 0;
 let last = 0;
@@ -320,6 +337,8 @@ const boid_manager = new BoidManager(
 );
 
 const USE_MANAGER = true;
+
+Boid.camera.translation = vec2.fromValues( +x_slider.value, +y_slider.value );
 
 function render( timestamp: number ) {
   // drawScene( gl, programInfo, buffers, timestamp );
@@ -366,8 +385,25 @@ function render( timestamp: number ) {
       boid.hue = tr.length * boids.length / Math.E;
       boid.flock( tr, 60 * frametime );
     }
+    let camera_update = false;
     for ( let boid of boids ) {
       boid.update(60 * frametime);
+      if ( ! camera_update ) {
+        camera_update = true;
+        // Boid.camera.translation = vec2.clone(boid.position);
+        // const x = Boid.camera.translation[1];
+        // Boid.camera.translation[1] = Boid.camera.translation[0];
+        // Boid.camera.translation[0] = x;
+
+        // console.log( boid.position );
+        // Boid.camera.translation[0] = 0;
+        // Boid.camera.translation[1] = GL.canvas.height  Boid.camera.translation[1];
+        x_slider.value = Boid.camera.translation[0];
+        y_slider.value = Boid.camera.translation[1];
+        // Boid.camera.angle = vec2.angle( vec2.fromValues(0,1), boid.velocity );
+        boid.hue = 7500;
+      }
+
       boid.render();
     }
   }
